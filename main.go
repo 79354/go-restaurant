@@ -23,18 +23,18 @@ func main(){
 	publicRoutes := r.Group("/api")
 	{
 		// auth end points: login/ register
-		routes.UserRoutes(publicRoutes)
+		routes.RegisterUserRoutes(publicRoutes)
 	}
 
 	protectedRoutes := r.Group("/api")
 	protectedRoutes.Use(middleware.Authentication())
 	{
-		routes.FoodRoutes(protectedRoutes)
-		routes.MenuRoutes(protectedRoutes)
-		routes.TableRoutes(protectedRoutes)
-		routes.OrderRoutes(protectedRoutes)
-		routes.OrderItemRoutes(protectedRoutes)
-		routes.InvoiceRoutes(protectedRoutes)
+		routes.RegisterFoodRoutes(protectedRoutes)
+		routes.RegisterMenuRoutes(protectedRoutes)
+		routes.RegisterTableRoutes(protectedRoutes)
+		routes.RegisterOrderRoutes(protectedRoutes)
+		routes.RegisterOrderItemRoutes(protectedRoutes)
+		routes.RegisterInvoiceRoutes(protectedRoutes)
 	}
 
 	r.Run(":" + port)
