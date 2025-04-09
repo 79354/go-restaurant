@@ -2,10 +2,8 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"go-restaurant/database"
 	"go-restaurant/models"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -41,9 +39,9 @@ func GetFoods() gin.HandlerFunc{
 		}
 
 		startIndex := -1
-		startIndex, err := strconv.Atoi(c.Query("startIndex"))
+		startIndex, err = strconv.Atoi(c.Query("startIndex"))
 		if err != nil && startIndex < 0 {
-			startIndex := (page - 1) * recordPerPage
+			startIndex = (page - 1) * recordPerPage
 		}
 
 		matchStage := bson.D{{"$match", bson.D{}}}
