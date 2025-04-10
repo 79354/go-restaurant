@@ -8,7 +8,7 @@ import (
 // Menu represents restaurant menus (breakfast, lunch, dinner, etc.)
 type Menu struct {
 	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Menu_id        string             `bson:"menu_id" json:"menu_id"`
+	Menu_id        *string             `bson:"menu_id" json:"menu_id"`
 	Name           string             `bson:"name" json:"name" validate:"required,min=2,max=50"`
 	Description    string             `bson:"description" json:"description,omitempty"`
 	Start_time     time.Time          `bson:"start_time" json:"start_time,omitempty"`

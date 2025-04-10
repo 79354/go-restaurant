@@ -184,7 +184,7 @@ func UpdateFood() gin.HandlerFunc{
 		var food models.Food
 
 		foodId := c.Param("food_id")
-		if foodID == "" {
+		if foodId == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Food ID is required"})
 			return
 		}
@@ -217,7 +217,7 @@ func UpdateFood() gin.HandlerFunc{
 			defer cancel()
 			if err != nil{
 				if err == mongo.ErrNoDocuments {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Menu not found", "menu_id": *updateReq.Menu_id})
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Menu not found", "menu_id": *food.Menu_id})
 				} else {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error", "details": err.Error()})
 				}
