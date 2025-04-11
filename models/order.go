@@ -9,6 +9,8 @@ import (
 type Order struct {
 	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	Order_id         string             `bson:"order_id" json:"order_id"`
+	Created_at       time.Time          `bson:"created_at" json:"created_at"`
+	Updated_at       time.Time          `bson:"updated_at" json:"updated_at"`
 	
 	Order_date       time.Time          `bson:"order_date" json:"order_date"`
 	Status           *string             `bson:"status" json:"status" validate:"required,eq=PENDING|eq=PROCESSING|eq=COMPLETED|eq=CANCELLED"`
@@ -22,6 +24,4 @@ type Order struct {
 	// Tip              float64            `bson:"tip" json:"tip,omitempty"`
 	// Total_amount     float64            `bson:"total_amount" json:"total_amount"`
 
-	Created_at       time.Time          `bson:"created_at" json:"created_at"`
-	Updated_at       time.Time          `bson:"updated_at" json:"updated_at"`
 }

@@ -189,7 +189,7 @@ func UpdateInvoice() gin.HandlerFunc{
 		invoice.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		updateObj = append(updateObj, bson.E{"update_at", invoice.Updated_at})
 
-		opts := options.Update().SetUpsert(false)
+		opts := options.Update().SetUpsert(true)
 
 		filter := bson.M{"invoice_id": invoiceId}
 		result, err := invoiceCollection.UpdateOne(
