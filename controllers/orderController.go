@@ -165,3 +165,27 @@ func OrderItemOrderCreator(order models.Order) string {
 	}
 	return order.Order_id
 }
+
+/*
+func DeleteOrder() gin.HandlerFunc{
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		orderId := c.Param("order_id")
+
+		result, err := orderCollection.DeleteOne(ctx, bson.M{"order_id": orderId})
+		if err != nil{
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while deleting the order"})
+			return
+		}
+
+		if result.DeletedCount == 0{
+			c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "order successfully deleted"})
+	}
+}
+*/
