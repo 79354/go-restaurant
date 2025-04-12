@@ -234,6 +234,15 @@ func DeleteCount() gin.Context{
 			return
 		}
 
-		result, err := 
+		result, err := invoiceCollection.DeleteOne(ctx, bson.M{"invoice_id": invoiceID})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete invoice"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "invoice deleted successfully",
+			"deleted_count": result.DeletedCount,
+		})
 	}
 }

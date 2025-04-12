@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -87,20 +88,120 @@ func GetUser() gin.HandlerFunc{
 
 func Signup() gin.HandlerFunc{
 	return func(c *gin.Context){
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
+		var user models.User
+		if err := c.BindJSON(&user); err != nil{
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if err := validate.Struct(user); err != nil{
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// checking if email already exists
+		count, err := userCollection.CountDocuments(ctx, bson.M{"email": user.Email})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error checking for email"})
+			return
+		}
+		if count > 0{
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
+			return
+		}
+
+		password, err:= bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+		if err != nil{
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
+			return
+		}
+
+		user.Password = string(password)
+		user.Created_at = time.Now()
+		user.Updated_at = time.Now()
+		user.ID = primitive.NewObjectID()
+		user.User_id = user.ID.Hex()
+
+		if user.Role == ""{
+			user.Role = "USER"
+		}
+
+		_, err = userCollection.InsertOne(ctx, user)
+		if err != nil{
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			return
+		}
+
+		user.Password = ""
+
+		c.JSON(http.StatusCreated, user)
 	}
 }
 
 func Login() gin.HandlerFunc{
 	return func(c *gin.Context){
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
+		var user models.User
+		var userFound models.User
+
+		if err:= c.BindJSON(&user); err != nil{
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// look for user by Email
+		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&userFound)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+
+		// verify the password, input: (hashed_password, password)
+		err = bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(user.Password))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+
+		token, refreshToken, err := auth.GenerateAllToken(
+			userFound.Email,
+			userFound.First_name,
+			userFound.Last_name,
+			userFound.User_id,
+			userFound.Role,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})
+			return
+		}
+
+		update := bson.M{
+			"token": token,
+			"refresh_token": refreshToken,
+			"updated_at": time.Now(),
+		}
+
+		_, err = userCollection.UpdateOne(
+			ctx,
+			bson.M{"user_id": foundUser.user_id},
+			bson.M{"$set": update},
+		)
+
+		if err != nil{
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user tokens"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"token": token,
+			"refresh_token": refreshToken,
+			"user_id": userFound.User_id,
+			"role": userFound.Role,
+		})
 	}
-}
-
-func HashPassword(){
-
-}
-
-func VerifyPass(){
-
 }
