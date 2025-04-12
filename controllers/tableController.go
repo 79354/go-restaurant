@@ -14,7 +14,6 @@ import (
 )
 
 var tableCollection *mongo.Collection = database.OpenCollection(database.Client, "table")
-var validate = validator.New()
 
 func GetTables() gin.HandlerFunc{
 	return func(c *gin.Context{

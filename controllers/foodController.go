@@ -19,7 +19,6 @@ import (
 
 var(
 	foodCollection *mongo.Collection = database.OpenCollection(database.Client, "food")
-	menuCollection *mongo.Collection = database.OpenCollection(database.Client, "menu")
 	validate = validator.New()
 )
 
@@ -57,7 +56,7 @@ func GetFoods() gin.HandlerFunc{
 				{"_id", 0},
 				{"total_count", 1},
 				{"food_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
-			}},
+			}}
 		}
 
 		result, err := foodCollection.Aggregate(ctx,

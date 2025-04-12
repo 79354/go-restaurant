@@ -14,10 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var (
-	invoiceCollection *mongo.Collection = database.OpenCollection(database.Client, "invoice")
-	orderCollection   *mongo.Collection = database.OpenCollection(database.Client, "order")
-)
+var invoiceCollection *mongo.Collection = database.OpenCollection(database.Client, "invoice")
 
 type InvoiceViewFormat struct{
 	Invoice_id       string      `json:"invoice_id"`
