@@ -13,5 +13,6 @@ func RegisterMenuRoutes(router gin.RouterGroup){
 		menuRouter.GET("/:menu_id", controller.GetMenu)
 		menuRouter.POST("/", controller.CreateMenu)
 		menuRouter.PATCH("/:menu_id", controller.UpdateMenu)
+		menuRouter.DELETE("/:menu_id", controller.DeleteMenu)
 	}
 }

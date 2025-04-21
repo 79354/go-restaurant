@@ -40,5 +40,58 @@ function FoodList() {
         }
     };
 
-    const 
+    return (
+        <div className="container">
+            <div className="list-header">
+                <h2>Food Items</h2>
+                <Link to="/foods/new" className="btn-add">Add Food</Link>
+            </div>
+    
+            {error && <div className="error-message">{error}</div>}
+            {loading ? (
+                <p>Loading...</p>
+            ) : (
+                <div className="food-list">
+                    <div className="table-responsive">
+                        <table className="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Price</th>
+                                    <th>Description</th>
+                                    <th>Available</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {foods.map((food) => (
+                                    <tr key={food.food_id}>
+                                        <td>{food.name}</td>
+                                        <td>${food.price.toFixed(2)}</td>
+                                        <td>{food.description}</td>
+                                        <td>
+                                            <span className={`status ${food.available ? "active" : "inactive"}`}>
+                                                {food.available ? "Yes" : "No"}
+                                            </span>
+                                        </td>
+                                        <td className="actions">
+                                            <button className="btn-edit" onClick={() => navigate(`/foods/edit/${food.food_id}`)}>Edit</button>
+                                            <button className="btn-delete" onClick={() => handleDelete(food.food_id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+    
+                    <div className="pagination">
+                        <button disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button>
+                        <span>Page {page} of {totalPages}</span>
+                        <button disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next</button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+    
 }
