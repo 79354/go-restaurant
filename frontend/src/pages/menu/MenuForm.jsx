@@ -1,101 +1,125 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { menuAPI } from "../../utils/api";
+import { useParams, useNavigate } from "react-router-dom";
+import { menuAPI } from "../../utils.api";
 
-function MenuList() {
-    const [menus, setMenus] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1)
-    const recordPerPage = 10;
+function MenuForm(){
+    const { menuId } = useParams();
     const navigate = useNavigate();
+    const isEdit = !!menuId;
+
+    const [formData, setFormData] = useState({
+        name: "",
+        category: "",
+        isAvailable: true,
+    });
+
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        fetchMenus();
-    }, [currentPage]);
+        if(isEdit) {
+            const fetchMenu = async () => {
+                try{
+                    setLoading(true);
+                    const data = await menuAPI.getMenu(menuId);
+                    setFormData({
+                        name: data.name || "",
+                        category: data.category || "",
+                        isAvailable: data.isAvailable !== undefined ? data.isAvailable : true
+                    });
+                    setLoading(false);
+                } catch(err) {
+                    setError("Failed to load menu item");
+                    setLoading(false);
+                }
+            }
+            fetchMenu()
+        }
+    }, [menuId, isEdit]);
 
-    const fetchMenus = async () => {
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData({
+            ...formData,
+            [name]: type === "checkbox" ? checked : value
+        });
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+
         try {
-            setLoading(true);
-            const response = await menuAPI.getMenus(currentPage, recordPerPage);
-
-            setMenus(response.data || []);
-            // Assuming the API returns total pages information
-            setTotalPages(response.totalPages || 1)
+            if(isEdit) {
+                await menuAPI.updateMenu(menuId, formData);
+            } else{
+                await menuAPI.createMenu(formData);
+            }
         }catch(err) {
-            setError("Failed to load menu items");
+            setError(isEdit ? "Failed to update menu" : "Failed to create menu");
+        }finally{
             setLoading(false);
         }
     };
 
-    const handleDelete = async (id) => {
-        if (window.confirm("Are you sure you want to delete this menu item?")) {
-            try {
-                await menuAPI.deleteMenu(id);
-                fetchMenus();
-            } catch (err) {
-                setError("Failed to delete menu item");
-            }
-        }
-    };
-
-    const handlePageChange = (newPage) => {
-        if (newPage > 0 && newPage < totalPages){
-            setCurrentPage(newPage);
-        }
-    };
-    if (loading && menus.length === 0) return <div className="container">Loading...</div>;
-
     return (
         <div className="container">
+            <h1 className="list-header">{isEdit ? "Edit Menu Item" : "Create New Menu Item"}</h1> 
+
             {error && <div className="error-message">{error}</div>}
 
-            <div className="menu-list">
-                <div className="list-header">
-                    <h2>Menu Items</h2>
-                    {/* Example: Add new menu button if needed */}
-                    {/* <button className="btn-add" onClick={() => navigate("/add-menu")}>Add New</button> */}
+            <form onSubmit={handleSubmit} className="food-form">
+                <div className="form-group">
+                    <label htmlFor="name">Name</label>
+                    <input
+                        id="name"
+                        type="text"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleChange}
+                        required
+                    />
                 </div>
 
-                <div className="table-responsive">
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Price</th>
-                                <th>Description</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {menus.map((menu) => (
-                                <tr key={menu._id}>
-                                    <td>{menu.name}</td>
-                                    <td>{menu.price}</td>
-                                    <td>{menu.description}</td>
-                                    <td className="actions">
-                                        <button className="btn-edit" onClick={() => navigate(`/menu/edit/${menu._id}`)}>Edit</button>
-                                        <button className="btn-delete" onClick={() => handleDelete(menu._id)}>Delete</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div className="form-group">
+                    <label htmlFor="category">Category</label>
+                    <select
+                        id="category"
+                        name="category"
+                        value={formData.category}
+                        onChange={handleChange}
+                    >
+                        <option value="">Select a category</option>
+                        <option value="appetizer">Appetizer</option>
+                        <option value="main">Main Course</option>
+                        <option value="dessert">Dessert</option>
+                        <option value="beverage">Beverage</option>
+                    </select>
                 </div>
 
-                <div className="pagination">
-                    <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}>
-                        Previous
+                <div className="form-group checkbox">
+                    <input
+                        id="isAvailable"
+                        type="checkbox"
+                        name="isAvailable"
+                        checked={formData.isAvailable}
+                        onChange={handleChange}
+                    />
+                    <label htmlFor="isAvailable">Available</label>
+                </div>
+
+                <div className="form-actions">
+                    <button type="submit" disabled={loading} className="btn-primary">
+                        {loading ? "Saving..." : isEdit ? "Update Menu" : "Create Menu"}
                     </button>
-                    <span>Page {currentPage} of {totalPages}</span>
-                    <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages}>
-                        Next
+                    <button type="button" onClick={() => navigate("/menus")} className="btn-secondary">
+                        Cancel
                     </button>
                 </div>
-            </div>
+            </form>
         </div>
-    );
+    )
 }
 
 export default MenuForm;

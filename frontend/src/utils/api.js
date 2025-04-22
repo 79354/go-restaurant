@@ -46,8 +46,8 @@ export const orderAPI = {
             method: "POST",
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
-        })
-        return res.json()
+        });
+        return res.json();
     },
     
     updateOrder: async (id, data) => {
@@ -55,28 +55,53 @@ export const orderAPI = {
             method: "PATCH",
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(data)
-        })
-        return res.json()
+        });
+        return res.json();
     },
+
+    deleteOrder: async (id) => {
+        const res = await fetch(`/api/orders/${id}`, {
+            method: "DELETE",
+        });
+        return res.json();
+    }
 };
 
 export const tableAPI = {
-    getTables: () => {
-
+    getTables: async (currentPage = 1, recordPerPage = 10) => {
+        const res = await fetch(`/api/tables/?page=${currentPage}&recordPerPage=${recordPerPage}`);
+        return res.json();
     },
 
-    getTable: () => {
-
+    getTable: async (id) => {
+        const res = await fetch(`/api/tables/${id}`);
+        return res.json();
     },
 
-    createTable: () => {
-
+    createTable: async (data) => {
+        const res = await fetch(`/api/tables/`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data),
+        });
+        return res.json();
     },
 
-    updateTable: () => {
-
+    updateTable: async (id, data) => {
+        const res = await fetch(`/api/tables/${id}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data),
+        });
+        return res.JSON();
     },
 
+    deleteTable: async () => {
+        const res = await fetch(`/api/tables/{$id}`, {
+            method: "DELETE",
+        })
+        return res.json();
+    }
 }
 
 export const userAPI = {
