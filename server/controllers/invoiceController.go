@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var invoiceCollection *mongo.Collection = database.OpenCollection(database.Client, "invoice")
+var invoiceCollection *mongo.Collection = database.InvoiceCollection
 
 type InvoiceViewFormat struct{
 	Invoice_id       string      `json:"invoice_id"`
@@ -121,7 +121,7 @@ func CreateInvoice() gin.HandlerFunc{
 		invoice.Payment_due_date, _ = time.Parse(time.RFC3339, time.Now().AddDate(0, 0, 1).Format(time.RFC3339))
 		invoice.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		invoice.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		invoice.ID = primitive.NewObjectID
+		invoice.ID = primitive.NewObjectID()
 		invoice.Invoice_id = invoice.ID.Hex()
 
 		if err := validate.Struct(invoice); err != nil {
@@ -171,51 +171,52 @@ func UpdateInvoice() gin.HandlerFunc{
 
 		// partial updates: only for fields that are provided
 		if invoice.Payment_method != nil{
-			updateObj = append(updateObj, bson.M{Key: "payment_method", Value: invoice.Payment_method})
+			updateObj = append(updateObj, bson.E{Key: "payment_method", Value: invoice.Payment_method})
 		}
 
-		if invoice.Payment_status != nil{
-			updateObj = append(updateObj, bson.M{Key: "payment_status", Value: invoice.Payment_status})
-		}
+		if invoice.Payment_status != nil {
+			updateObj = append(updateObj, bson.E{Key: "payment_status", Value: invoice.Payment_status})
 
-		if invoice.Payment_status != nil && *invoice.Payment_status == "PAID" && existingInvoice.Payment_status != nil && *existingInvoice.Payment_status != "PAID"{
-			paymentDate, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-			updateObj = append(updateObj, bson.E{Key: "payment_date", Value: paymentDate})
+			// If status changed to PAID, set payment_date
+			if *invoice.Payment_status == "PAID" &&
+				(existingInvoice.Payment_status == nil || *existingInvoice.Payment_status != "PAID") {
+				updateObj = append(updateObj, bson.E{Key: "payment_date", Value: time.Now()})
+			}
 		}
 
 		invoice.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		updateObj = append(updateObj, bson.E{"update_at", invoice.Updated_at})
+		updateObj = append(updateObj, bson.E{Key: "updated_at", Value: time.Now()})
 
-		opts := options.Update().SetUpsert(true)
-
+		// Perform update
+		opts := options.Update().SetUpsert(false)
 		filter := bson.M{"invoice_id": invoiceId}
+
 		result, err := invoiceCollection.UpdateOne(
 			ctx,
 			filter,
-			bson.D{{"$set", updateObj}},
+			bson.D{{Key: "$set", Value: updateObj}},
 			opts,
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "invoice item update failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update invoice"})
 			return
 		}
 
-		// check if any document was modified
-		if result.MatchedCount == 0{
-			c.JSON(http.StatusNotFound, gin.H{"error": "invoice not found"})
+		if result.MatchedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Invoice not found"})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"message": "invoice update successfully",
-			"result": result,
+			"message": "Invoice updated successfully",
+			"result":  result,
 		})
 	}
 }
 
-func DeleteCount() gin.Context{
+func DeleteCount() gin.HandlerFunc{
 	return func(c *gin.Context){
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel ()
 
 		invoiceID := c.Param("invoice_id")
