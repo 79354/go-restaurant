@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var menuCollection *mongo.Collection = database.OpenCollection(database.Client, "menu")
+var menuCollection *mongo.Collection = database.MenuCollection
 
 func GetMenus() gin.HandlerFunc{
 	return func(c *gin.Context){
@@ -103,14 +103,13 @@ func isValidTimeSpan(start, end time.Time) bool{
 	return start.Before(end) && start.After(time.Now())
 }
 
-func UpdateMenu() gin.HandlerFunc{
-	return func(c *gin.Context){
+func UpdateMenu() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		var menu models.Menu
-
-		if err := c.BindJSON(&menu); err != nil{
+		if err := c.BindJSON(&menu); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -118,51 +117,64 @@ func UpdateMenu() gin.HandlerFunc{
 		menuId := c.Param("menu_id")
 		filter := bson.M{"menu_id": menuId}
 
-		if menu.Start_time != nil && menu.End_time != nil{
+		var updateObj primitive.D
+
+		// Validate and update time span
+		if menu.Start_time != nil && menu.End_time != nil {
 			if !isValidTimeSpan(*menu.Start_time, *menu.End_time) {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "kindly enter the time again"})
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Invalid time span: start time must be before end time and in the future",
+				})
 				return
 			}
 			updateObj = append(updateObj, bson.E{Key: "start_time", Value: menu.Start_time})
 			updateObj = append(updateObj, bson.E{Key: "end_time", Value: menu.End_time})
-
-			if menu.Name != ""{
-				updateObj = append(updateObj, bson.E{"name", menu.Name})
-			}
-
-			if menu.Category != ""{
-				updateObj = append(updateObj, bson.E{"category", menu.Category})
-			}
-
-			updateObj = append(updateObj, bson.E{Key: "active", Value: menu.Active})
-
-			menu.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-			updateObj = append(updateObj, bson.E{"updated_at", menu.Updated_at})
-
-			opts := options.Update().SetUpsert(true)
-
-			result, err := menuCollection.UpdateOne(
-				ctx,
-				filter,
-				bson.D{{Key: "$set", Value: updateObj}},
-				opts,
-			)
-			if err != nil{
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "menu update failed"})
-				return
-			}
-
-			if result.MatchedCount == 0 {
-				c.JSON(http.StatusNotFound, gin.H{"error": "menu not found"})
-				return
-			}
-
-			c.JSON(http.StatusOK, gin.H{
-				"message": "menu updated successfully",
-				"modified_count": result.ModifiedCount,
-				"result": result,
-			})
 		}
+
+		// Update Name if provided (non-empty)
+		if menu.Name != "" {
+			updateObj = append(updateObj, bson.E{Key: "name", Value: menu.Name})
+		}
+
+		// Update Category if provided
+		if menu.Category != "" {
+			updateObj = append(updateObj, bson.E{Key: "category", Value: menu.Category})
+		}
+
+		// Update Active if needed (optional)
+		// You can skip this unless you want to allow updating `active` via API
+		// For now, assume it's always set
+
+		// Always update updated_at
+		updateAt := time.Now()
+		updateObj = append(updateObj, bson.E{Key: "updated_at", Value: updateAt})
+
+		if len(updateObj) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields to update"})
+			return
+		}
+
+		opts := options.Update().SetUpsert(false)
+		result, err := menuCollection.UpdateOne(
+			ctx,
+			filter,
+			bson.D{{Key: "$set", Value: updateObj}},
+			opts,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update menu"})
+			return
+		}
+
+		if result.MatchedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Menu not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":        "Menu updated successfully",
+			"modified_count": result.ModifiedCount,
+		})
 	}
 }
 
@@ -194,42 +206,3 @@ func DeleteMenu() gin.HandlerFunc {
 		})
 	}
 }
-
-/*
-// GetActiveMenus returns all currently active menus
-func GetActiveMenus() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		// Find menus that are active and within their time span
-		now := time.Now()
-		filter := bson.M{
-			"active": true,
-			"$or": bson.A{
-				bson.M{
-					"start_time": bson.M{"$lte": now},
-					"end_time": bson.M{"$gte": now},
-				},
-				bson.M{
-					"start_time": bson.M{"$exists": false},
-				},
-			},
-		}
-
-		result, err := menuCollection.Find(ctx, filter)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error retrieving active menus"})
-			return
-		}
-
-		var activeMenus []bson.M
-		if err = result.All(ctx, &activeMenus); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error decoding active menus"})
-			return
-		}
-
-		c.JSON(http.StatusOK, activeMenus)
-	}
-}
-*/
