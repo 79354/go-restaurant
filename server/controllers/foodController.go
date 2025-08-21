@@ -10,74 +10,83 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var(
-	foodCollection *mongo.Collection = database.OpenCollection(database.Client, "food")
-	validate = validator.New()
-)
+var	foodCollection *mongo.Collection = database.FoodCollection
 
-func GetFoods() gin.HandlerFunc{
-	return func(c *gin.Context){
+
+func GetFoods() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
-		if err != nil && recordPerPage < 1{
+		if err != nil || recordPerPage < 1 {
 			recordPerPage = 10
 		}
 
 		page, err := strconv.Atoi(c.Query("page"))
-		if err != nil && page < 1{
+		if err != nil || page < 1 {
 			page = 1
 		}
 
-		startIndex := -1
-		startIndex, err = strconv.Atoi(c.Query("startIndex"))
-		if err != nil && startIndex < 0 {
-			startIndex = (page - 1) * recordPerPage
+		startIndex := (page - 1) * recordPerPage
+		// Override startIndex if provided
+		if startIndexStr := c.Query("startIndex"); startIndexStr != "" {
+			if idx, err := strconv.Atoi(startIndexStr); err == nil && idx >= 0 {
+				startIndex = idx
+			}
 		}
 
-		matchStage := bson.D{{"$match", bson.D{}}}
+		matchStage := bson.D{{Key: "$match", Value: bson.D{}}}
 		groupStage := bson.D{
-			{"$group", bson.D{
-				{"_id", bson.D{{"_id", "null"}}}, 
-				{"total_count", bson.D{{"$sum", 1}}}, 
-				{"data", bson.D{{"$push", "$$ROOT"}}},
+			{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: nil},
+				{Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}},
+				{Key: "data", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}},
 			}},
 		}
 		projectStage := bson.D{
-			{"$project", bson.D{
-				{"_id", 0},
-				{"total_count", 1},
-				{"food_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
-			}}
+			{Key: "$project", Value: bson.D{
+				{Key: "_id", Value: 0},
+				{Key: "total_count", Value: 1},
+				{Key: "food_items", Value: bson.D{
+					{Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}},
+				}},
+			}},
 		}
 
-		result, err := foodCollection.Aggregate(ctx,
-			mongo.Pipeline{
-				matchStage,
-				groupStage,
-				projectStage,
-			},
-		)
+		// Perform aggregation
+		result, err := foodCollection.Aggregate(ctx, mongo.Pipeline{
+			matchStage,
+			groupStage,
+			projectStage,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to execute aggregation", "details": err.Error()})
+			return
+		}
+		defer result.Close(ctx)
+
 		var allFoods []bson.M
-		if err := result.All(&allFoods); err != nil{
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode foods", "details": err.Error()})
+		if err = result.All(ctx, &allFoods); err != nil { 
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode results", "details": err.Error()})
 			return
 		}
 
-		if len(allFoods) == 0{
-			c.JSON(http.StatusInternalServerError, gin.H{"total_count": 0, "food_items": []models.Food})
+		if len(allFoods) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"total_count": 0,
+				"food_items":  []models.Food{},
+			})
 			return
 		}
 
-		c.JSON(http.StatusOK, allFoods[0])
+		c.JSON(http.StatusOK, allFoods[0]) // result.All returns array of docs; we get first (only) group
 	}
 }
 
@@ -106,59 +115,65 @@ func GetFood() gin.HandlerFunc{
 	}
 }
 
-func CreateFood() gin.HandlerFunc{
-	return func(c *gin.Context){
-		var ctx, cancel = context.WithTimeout(context.Background(), time.Second*10)
+func CreateFood() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		var food models.Food
-		
-		if err := c.BindJSON(&food); err != nil{
+
+		if err := c.BindJSON(&food); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		validationErr := validate.Struct(food)
-		if validationErr != nil{
+		if validationErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
 			return
 		}
-		
+
 		var menu models.Menu
-
 		err := menuCollection.FindOne(ctx, bson.M{"menu_id": food.Menu_id}).Decode(&menu)
-		if err != nil{
-			msg := "menu was not found"
-			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Menu not found", "menu_id": *food.Menu_id})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error", "details": err.Error()})
+			}
 			return
 		}
 
-		validationErr = validate.Struct(menu)
-		if validationErr != nil{
-			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
-			return
+		// Set timestamps
+		now := time.Now()
+		food.Created_at = now
+		food.Updated_at = now
+
+		// Generate ID
+		food.ID = primitive.NewObjectID()
+		food.Food_id = food.ID.Hex()
+
+		// Set default available if nil
+		if food.Available == nil {
+			food.Available = BoolPtr(true)
 		}
 
-		food.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		food.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		food.ID := primitive.NewObjectID()
-		food.Food_id := food.ID.Hex()
-
-		if !food.Available {
-			food.Available = true
+		// Round price if provided
+		if food.Price != nil {
+			roundedPrice := toFixed(*food.Price, 2)
+			food.Price = &roundedPrice
 		}
-
-		food.Price = toFixed(food.Price, 2)
 
 		result, insertErr := foodCollection.InsertOne(ctx, food)
-		if insertErr != nil{
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to Create the Food item", "details": insertErr.Error()})
+		if insertErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create food item", "details": insertErr.Error()})
 			return
 		}
+
 		c.JSON(http.StatusCreated, gin.H{
 			"message": "Food item created successfully",
 			"food_id": food.Food_id,
-			"result": result,
+			"result":  result,
 		})
 	}
 }
@@ -174,12 +189,15 @@ func toFixed(num float64, precision int) float64{
 	return float64(round(num*output)) / output
 }
 
-func UpdateFood() gin.HandlerFunc{
-	return func(c *gin.Context){
+func BoolPtr(b bool) *bool { return &b }
+func StringPtr(s string) *string { return &s }
+func Float64Ptr(f float64) *float64 { return &f }
+
+func UpdateFood() gin.HandlerFunc {
+	return func(c *gin.Context) {
 		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		var menu models.Menu
 		var food models.Food
 
 		foodId := c.Param("food_id")
@@ -188,53 +206,54 @@ func UpdateFood() gin.HandlerFunc{
 			return
 		}
 
-		if err := c.BindJSON(&food); err != nil{
+		if err := c.BindJSON(&food); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data", "details": err.Error()})
 			return
 		}
 
 		var updateObj primitive.D
-		
-		if food.Name != nil{
-			updateObj = append(updateObj, bson.E{"name", food.Name})
+
+		if food.Name != nil {
+			updateObj = append(updateObj, bson.E{Key: "name", Value: *food.Name})
 		}
 
-		if food.Price != nil{
-			updateObj = append(updateObj, bson.E{"price", food.Price})
+		if food.Price != nil {
+			rounded := toFixed(*food.Price, 2)
+			updateObj = append(updateObj, bson.E{Key: "price", Value: rounded})
 		}
 
-		if food.Category_id != nil{
-			updateObj = append(updateObj, bson.E{"category_id", food.Category_id})
+		if food.Category_id != nil {
+			updateObj = append(updateObj, bson.E{Key: "category_id", Value: *food.Category_id})
 		}
-		
-		if food.Description != nil{
-			updateObj = append(updateObj, bson.E{"description", food.Description})
+
+		if food.Description != nil {
+			updateObj = append(updateObj, bson.E{Key: "description", Value: *food.Description})
 		}
-		
-		if food.Menu_id != nil{
+
+		if food.Menu_id != nil {
+			var menu models.Menu
 			err := menuCollection.FindOne(ctx, bson.M{"menu_id": food.Menu_id}).Decode(&menu)
-			defer cancel()
-			if err != nil{
+			if err != nil {
 				if err == mongo.ErrNoDocuments {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Menu not found", "menu_id": *food.Menu_id})
+					c.JSON(http.StatusNotFound, gin.H{"error": "Menu not found", "menu_id": *food.Menu_id})
 				} else {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error", "details": err.Error()})
 				}
 				return
 			}
-			updateObj = append(updateObj, bson.E{"menu_id", food.Menu_id})
+			updateObj = append(updateObj, bson.E{Key: "menu_id", Value: *food.Menu_id})
 		}
 
 		if food.Image != nil {
-			updateObj = append(updateObj, bson.E{"image", *food.Image})
+			updateObj = append(updateObj, bson.E{Key: "image", Value: *food.Image})
 		}
 
 		if food.Available != nil {
-			updateObj = append(updateObj, bson.E{"available", *food.Available})
+			updateObj = append(updateObj, bson.E{Key: "available", Value: *food.Available})
 		}
 
-		food.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		updateObj = append(updateObj, bson.E{"updated_at", food.Updated_at})
+		// Always update updated_at
+		updateObj = append(updateObj, bson.E{Key: "updated_at", Value: time.Now()})
 
 		upsert := true
 		opt := options.UpdateOptions{
@@ -244,16 +263,20 @@ func UpdateFood() gin.HandlerFunc{
 		result, err := foodCollection.UpdateOne(
 			ctx,
 			bson.M{"food_id": foodId},
-			bson.D{{"$set", updateObj}},
+			bson.D{{Key: "$set", Value: updateObj}},
 			&opt,
 		)
-		
+
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update food item", "details": err.Error()})
 			return
 		}
 
-		c.JSON(http.StatusOK, result)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Food updated successfully",
+			"matched": result.MatchedCount,
+			"modified": result.ModifiedCount,
+		})
 	}
 }
 
