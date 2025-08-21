@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+	"net/http"
 	"os"
 
 	"go-restaurant/database"
@@ -16,8 +18,17 @@ func main(){
 		port = "8080"
 	}
 
+	database.DBinstance()
+	database.Client = database.DBinstance()
+	database.InitializeCollections()
+
 	r := gin.New()
 	r.Use(gin.Logger())
+
+	r.Use(middleware.CORSMiddleware())
+	r.GET("/api/health-check", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Server is running"})
+	})
 
 // func (group *gin.RouterGroup) Group(relativePath string, handlers ...gin.HandlerFunc) *gin.RouterGroup
 	publicRoutes := r.Group("/api")
@@ -37,5 +48,8 @@ func main(){
 		routes.RegisterInvoiceRoutes(protectedRoutes)
 	}
 
-	r.Run(":" + port)
+	log.Printf("Server is running on port %s", port)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
 }
