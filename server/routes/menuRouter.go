@@ -6,13 +6,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterMenuRoutes(router gin.RouterGroup){
+func RegisterMenuRoutes(router *gin.RouterGroup){
 	menuRouter := router.Group("/menus")
 	{
-		menuRouter.GET("/", controller.GetMenus)
-		menuRouter.GET("/:menu_id", controller.GetMenu)
-		menuRouter.POST("/", controller.CreateMenu)
-		menuRouter.PATCH("/:menu_id", controller.UpdateMenu)
-		menuRouter.DELETE("/:menu_id", controller.DeleteMenu)
+		menuRouter.GET("/", controller.GetMenus())
+		menuRouter.GET("/:menu_id", controller.GetMenu())
+		menuRouter.POST("/", controller.CreateMenu())
+		menuRouter.PATCH("/:menu_id", controller.UpdateMenu())
+		menuRouter.DELETE("/:menu_id", controller.DeleteMenu())
 	}
 }
