@@ -10,10 +10,10 @@ import(
 func RegisterFoodRoutes(router *gin.RouterGroup){
 	foodRouter := router.Group("/foods")
 	{
-		foodRouter.GET("/", controller.GetFoods)
-		foodRouter.Get("/:food_id", controller.GetFood)
-		foodRouter.POST("/", controller.CreateFood)
-		foodRouter.PATCH("/:food_id", controller.UpdateFood)
-		foodRouter.DELETE("/:food_id", controller.DeleteFood)
+		foodRouter.GET("/", controller.GetFoods())
+		foodRouter.GET("/:food_id", controller.GetFood())
+		foodRouter.POST("/", controller.CreateFood())
+		foodRouter.PATCH("/:food_id", controller.UpdateFood())
+		foodRouter.DELETE("/:food_id", controller.DeleteFood())
 	}
 }
