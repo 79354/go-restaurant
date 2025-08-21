@@ -19,7 +19,7 @@ func Authentication() gin.HandlerFunc {
 
 		// Remove Bearer prefix if it exists
 		if len(clientToken) > 7 && clientToken[:7] == "Bearer " {
-			clientToken = clientToken[7:]
+			clientToken = clientToken[7:]	
 		}
 
 		claims, errMessage := helper.ValidateToken(clientToken)
@@ -66,6 +66,25 @@ func AuthorizeRoles(allowedRoles ...string) gin.HandlerFunc {
 		if !authorized {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you don't have permission to access this resource"})
 			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// CORSMiddleware adds CORS headers to the response
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Set CORS headers
+		c.Header("Access-Control-Allow-Origin", "http://localhost:5173")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Header("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
+
+		// Stop here if it's a preflight OPTIONS request
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 
