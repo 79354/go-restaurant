@@ -1,207 +1,233 @@
+// userController.go
 package controllers
 
 import (
-	"context"
-	"go-restaurant/database"
-	"go-restaurant/models"
-	"log"
-	"net/http"
-	"strconv"
-	"time"
+    "context"
+    "net/http"
+    "strconv"
+    "time"
 
-	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"golang.org/x/crypto/bcrypt"
-	"gopkg.in/mgo.v2/bson"
+    "github.com/gin-gonic/gin"
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/bson/primitive"
+    "go.mongodb.org/mongo-driver/mongo"
+
+    "go-restaurant/database"
+    "go-restaurant/helpers"
+    "go-restaurant/models"
 )
 
-var userCollection *mongo.Collection = database.OpenCollection(database.Client, "user")
+var userCollection *mongo.Collection = database.UserCollection
 
-func GetUsers() gin.HandlerFunc{
-	return func(c *gin.Context){
-		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+func GetUsers() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
 
-		recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
-		if err != nil && recordPerPage < 1{
-			recordPerPage = 10
-		}
+        recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
+        if err != nil || recordPerPage < 1 {
+            recordPerPage = 10
+        }
 
-		page, err := strconv.Atoi(c.Query("page"))
-		if err != nil && page < 1{
-			page = 1
-		}
+        page, err := strconv.Atoi(c.Query("page"))
+        if err != nil || page < 1 {
+            page = 1
+        }
 
-		startIndex := -1
-		startIndex, err = strconv.Atoi(c.Query("startIndex"))
-		if err != nil && startIndex < 0 {
-			startIndex = (page - 1) * recordPerPage
-		}
+        startIndex := (page - 1) * recordPerPage
+        if startIndexStr := c.Query("startIndex"); startIndexStr != "" {
+            if idx, err := strconv.Atoi(startIndexStr); err == nil && idx >= 0 {
+                startIndex = idx
+            }
+        }
 
-		matchStage := bson.D{{"$match", bson.D{{}}}}
-		projectStage := bson.D{
-			{"$project", bson.D{
-				{"_id", 0},
-				{"total_count", 1},
-				{"user_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
-			}}
-		}
+        matchStage := bson.D{{Key: "$match", Value: bson.D{}}}
+        groupStage := bson.D{
+            {Key: "$group", Value: bson.D{
+                {Key: "_id", Value: nil},
+                {Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}},
+                {Key: "data", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}},
+            }},
+        }
+        projectStage := bson.D{
+            {Key: "$project", Value: bson.D{
+                {Key: "_id", Value: 0},
+                {Key: "total_count", Value: 1},
+                {Key: "user_items", Value: bson.D{
+                    {Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}},
+                }},
+            }},
+        }
 
-		result, err := userCollection.Aggregate(ctx, mongo.Pipeline{matchStage, projectStage})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing user items"})
-		}
+        pipeline := mongo.Pipeline{matchStage, groupStage, projectStage}
+        result, err := userCollection.Aggregate(ctx, pipeline)
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Error listing users"})
+            return
+        }
+        defer result.Close(ctx)
 
-		var allUsers []bson.M
-		if err := result.All(&allUsers); err != nil{
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode foods", "details": err.Error()})
-			return
-		}
+        var allUsers []bson.M
+        if err = result.All(ctx, &allUsers); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode users", "details": err.Error()})
+            return
+        }
 
-		if len(allUsers) == 0{
-			c.JSON(http.StatusInternalServerError, gin.H{"total_count": 0, "user_items": []models.User})
-			return
-		}
-	
-		c.BindJSON(http.StatusOK, allUsers[0])
-	}
+        if len(allUsers) == 0 {
+            c.JSON(http.StatusOK, gin.H{
+                "total_count": 0,
+                "user_items":  []models.User{},
+            })
+            return
+        }
+
+        c.JSON(http.StatusOK, allUsers[0])
+    }
 }
 
-func GetUser() gin.HandlerFunc{
-	return func(c *gin.Context){
-		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		userId := c.Param("user_id")
-		var user models.User
+func GetUser() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
 
-		err := userCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&user)
+        userId := c.Param("user_id")
+        var user models.User
 
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing user items"})
-		}
-		c.JSON(http.StatusOK, user)
-	}
+        err := userCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&user)
+        if err != nil {
+            c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+            return
+        }
+
+        user.Password = "" // don't send password
+        c.JSON(http.StatusOK, user)
+    }
 }
 
-func Signup() gin.HandlerFunc{
-	return func(c *gin.Context){
-		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+// Signup handles user registration
+func Signup() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
 
 		var user models.User
-		if err := c.BindJSON(&user); err != nil{
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+		// Bind JSON data
+		if err := c.BindJSON(&user); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid request data",
+				"details": err.Error(),
+			})
 			return
 		}
 
-		if err := validate.Struct(user); err != nil{
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Validate user data
+		validationErr := validate.Struct(user)
+		if validationErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Validation failed",
+				"details": validationErr.Error(),
+			})
 			return
 		}
 
-		// checking if email already exists
-		count, err := userCollection.CountDocuments(ctx, bson.M{"email": user.Email})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error checking for email"})
-			return
-		}
-		if count > 0{
-			c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists"})
-			return
-		}
-
-		password, err:= bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-		if err != nil{
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
+		// Check if user already exists
+		var existingUser models.User
+		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&existingUser)
+		if err == nil {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "User with this email already exists",
+			})
 			return
 		}
 
-		user.Password = string(password)
-		user.Created_at = time.Now()
-		user.Updated_at = time.Now()
+		// Hash password
+		password := helpers.HashPassword(user.Password)
+		user.Password = password
+
+		// Set default role if not provided
+		if user.Role == "" {
+			defaultRole := "staff"
+			user.Role = defaultRole
+		}
+
+		// Set timestamps
+		user.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		user.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		user.ID = primitive.NewObjectID()
 		user.User_id = user.ID.Hex()
 
-		if user.Role == ""{
-			user.Role = "USER"
-		}
-
-		_, err = userCollection.InsertOne(ctx, user)
-		if err != nil{
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+		// Insert user into database
+		result, insertErr := userCollection.InsertOne(ctx, user)
+		if insertErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to create user",
+				"details": insertErr.Error(),
+			})
 			return
 		}
 
-		user.Password = ""
-
-		c.JSON(http.StatusCreated, user)
+		// Return success response
+		c.JSON(http.StatusCreated, gin.H{
+			"message": "User created successfully",
+			"user_id": user.User_id,
+			"result":  result,
+		})
 	}
 }
 
-func Login() gin.HandlerFunc{
-	return func(c *gin.Context){
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// Login handles user authentication
+func Login() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
 
 		var user models.User
-		var userFound models.User
+		var foundUser models.User
 
-		if err:= c.BindJSON(&user); err != nil{
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		// Bind JSON data
+		if err := c.BindJSON(&user); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid request data",
+				"details": err.Error(),
+			})
 			return
 		}
 
-		// look for user by Email
-		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&userFound)
+		// Find user by email
+		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid email or password",
+			})
 			return
 		}
 
-		// verify the password, input: (hashed_password, password)
-		err = bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(user.Password))
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		// Validate password
+		passwordIsValid, msg := helpers.VerifyPassword(user.Password, foundUser.Password)
+		if !passwordIsValid {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": msg,
+			})
 			return
 		}
 
-		token, refreshToken, err := auth.GenerateAllToken(
-			userFound.Email,
-			userFound.First_name,
-			userFound.Last_name,
-			userFound.User_id,
-			userFound.Role,
+		// Generate token
+		token, refreshToken, _ := helpers.GenerateAllToken(
+			foundUser.Email,
+			foundUser.First_name,
+			foundUser.Last_name,
+			foundUser.User_id,
+			foundUser.Role,
 		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})
-			return
-		}
+		helpers.UpdateAllTokens(token, refreshToken, foundUser.User_id)
 
-		update := bson.M{
-			"token": token,
-			"refresh_token": refreshToken,
-			"updated_at": time.Now(),
-		}
-
-		_, err = userCollection.UpdateOne(
-			ctx,
-			bson.M{"user_id": foundUser.user_id},
-			bson.M{"$set": update},
-		)
-
-		if err != nil{
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user tokens"})
-			return
-		}
-
+		// Return success response
 		c.JSON(http.StatusOK, gin.H{
-			"token": token,
+			"message": "Login successful",
+			"user":    foundUser,
+			"token":   token,
 			"refresh_token": refreshToken,
-			"user_id": userFound.User_id,
-			"role": userFound.Role,
 		})
 	}
 }
