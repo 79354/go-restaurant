@@ -11,10 +11,9 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var orderCollection *mongo.Collection = database.OpenCollection(database.Client, "order")
+var orderCollection *mongo.Collection = database.OrderCollection
 
 func GetOrders() gin.HandlerFunc{
 	return func(c *gin.Context){
@@ -43,12 +42,40 @@ func GetOrder() gin.HandlerFunc{
 		orderID := c.Param("order_id")
 		var order models.Order
 
-		_, err := orderCollection.FindOne(ctx, bson.M{"order_id": orderID}).Decode(&order)
+		err := orderCollection.FindOne(ctx, bson.M{"order_id": orderID}).Decode(&order)
 		if err != nil{
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while fetching the order item"})
 		}
 		c.JSON(http.StatusOK, order)
 	}
+}
+
+func CreateOrderAndReturnID(order models.Order) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	now := time.Now()
+	order.Created_at = now
+	order.Updated_at = now
+
+	if order.Status == nil {
+		status := "PENDING"
+		order.Status = &status
+	}
+	if order.Payment_status == nil {
+		paymentStatus := "PENDING"
+		order.Payment_status = &paymentStatus
+	}
+
+	order.ID = primitive.NewObjectID()
+	order.Order_id = order.ID.Hex()
+
+	_, err := orderCollection.InsertOne(ctx, order)
+	if err != nil {
+		return "", err
+	}
+
+	return order.Order_id, nil
 }
 
 func CreateOrder() gin.HandlerFunc{
