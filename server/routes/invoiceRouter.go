@@ -6,12 +6,12 @@ import(
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterInvoiceRoutes(router gin.RouterGroup){
+func RegisterInvoiceRoutes(router *gin.RouterGroup){
 	invoiceRouter := router.Group("/invoices")
 	{
-		invoiceRouter.GET("/", controller.GetInvoices)
-		invoiceRouter.GET("/:invoice_id", controller.GetInvoice)
-		invoiceRouter.POST("/", controller.CreateInvoice)
-		invoiceRouter.PATCH("/:invoice_id", controller.UpdateInvoice)
+		invoiceRouter.GET("/", controller.GetInvoices())
+		invoiceRouter.GET("/:invoice_id", controller.GetInvoice())
+		invoiceRouter.POST("/", controller.CreateInvoice())
+		invoiceRouter.PATCH("/:invoice_id", controller.UpdateInvoice())
 	}
 }
